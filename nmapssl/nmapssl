@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+###===============================================================##
+##
+##            Name:  nmapssl
+##          Author:  mb
+##         Purpose:  check available TLS versions on given host using nmap scripts. also checks PTR of given IP address if no hostname used
+##         Created:  2020-04-10
+##   Last Modified:
+##         Version:  1
+##    Source Notes: https://stackoverflow.com/questions/32388689/how-to-test-if-a-remote-server-support-tls1-2-on-mac-os
+##                  https://stackoverflow.com/questions/592620/how-can-i-check-if-a-program-exists-from-a-bash-script
+##
+##
+###===============================================================##
+
+
+## Setup the colour codes.
+RED="\033[1;31m"
+GREEN="\033[1;32m"
+NOCOLOR="\033[0m"
+##usage -> echo -e "${GREEN}text-goes-here${NOCOLOR}"
+
+
+## Checks nmap&jq exists
+command -v nmap >/dev/null 2>&1 || { echo -e >&2 "${RED}nmap required, but not found...  Aborting.${NOCOLOR}"; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo -e >&2 "${RED}jq required, but not found...  Aborting.${NOCOLOR}"; exit 1; }
+
+#or
+#if [ ! -f "$(command -v nmap)" ]; then
+#  echo -e "${RED}Install nmap!${NOCOLOR}"
+#  exit 1
+#fi
+
+
+die()
+{
+  echo "$*"
+  exit;
+}
+
+server=$1
+
+show_help()
+{
+  me=$(basename "$0")
+  info=$(cat <<EOF
+
+  Usage:
+  $ sudo $me SERVER
+
+  Will try the following:
+  nmap --script ssl-cert,ssl-enum-ciphers -A -T4 --traceroute "\$1"
+  !! Make sure you have permission to scan the server !!
+
+  Output will show discovered ports, TLS version, and cipher suites supported on target.
+  If IP address used, will check PTR record.
+
+  The following are public test servers that demonstrate
+  support for various TLS versions.
+
+  $ sudo $me tls1test.salesforce.com   # TLS 1.0 is blocked
+  $ sudo $me tls-v1-0.badssl.com       # validate only TLS 1.0 enabled
+  $ sudo $me tls-v1-1.badssl.com       # validate only TLS 1.1 enabled
+  $ sudo $me smtp.gmail.com            # validate TLS 1.0+ are all supported
+
+EOF
+  )
+  echo "$info"
+  exit 1
+}
+
+if [ -z "$server" ] ; then
+  show_help
+fi
+
+if [[ $EUID -ne 0 ]]; then
+  echo -e "${RED}!!!! This script must be run as root !!!!${NOCOLOR}"
+  exit 1
+fi
+
+function testTLS() {
+nameLookup=$(nslookup "$1")
+
+  echo -e "${GREEN}Checking TLS...Press any key to check progress${NOCOLOR}"
+
+  if echo -e "${nameLookup}" | grep 'server can'\''t find' > /dev/null 2>&1 ; then
+    echo -e "DNS ${nameLookup}" | head -1
+    echo -e "${RED}**** Can't find $1: NXDOMAIN\n${NOCOLOR}"
+  fi
+  nmap --script ssl-cert,ssl-enum-ciphers -A -T4 --traceroute "$1"
+
+}
+
+testTLS "$@"
+
+exit $?
